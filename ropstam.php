@@ -24,6 +24,21 @@ class admin{
         
         //Service post content.
         add_filter( 'the_content', [$this, 'services_content_append'] );
+        
+        //Add scripts
+        add_action( 'wp_enqueue_scripts', [$this, 'enqueue_scripts'] );
+    }
+    
+    function enqueue_scripts(){
+        wp_enqueue_script(
+            'services-js',
+            plugin_dir_url( __FILE__ ) . 'script.js',
+            [],
+            '1.0.0',
+            true
+        );
+        
+        wp_enqueue_style('services-cs', plugin_dir_url( __FILE__ ) . 'style.css', []);
     }
 
     /**
@@ -89,65 +104,132 @@ class admin{
     */
    function recent_services_shortcode() {
 
-       $args = array(
-           'post_type'      => 'services',
-           'post_status'    => 'publish',
-           'posts_per_page' => 3,
-           'orderby'        => 'modified',
-           'order'          => 'DESC',
-           'no_found_rows'  => true,
-       );
+        $services = new WP_Query( array(
+            'post_type'      => 'services',
+            'post_status'    => 'publish',
+            'posts_per_page' => 3,
+            'orderby'        => 'modified',
+            'order'          => 'DESC',
+            'no_found_rows'  => true,
+        ) );
 
-       $services = new WP_Query( $args );
+        if ( ! $services->have_posts() ) {
+            return '<p>No services found.</p>';
+        }
 
-       if ( ! $services->have_posts() ) {
-           return '<p>No services found.</p>';
-       }
+        // Configure optional add-ons and their prices here.
+        $addons = array(
+            'priority_turnaround' => array(
+                'label' => 'Priority Turnaround',
+                'price' => 50,
+            ),
+            'seo_setup' => array(
+                'label' => 'SEO Setup',
+                'price' => 75,
+            ),
+            'express_support' => array(
+                'label' => 'Express Support',
+                'price' => 30,
+            ),
+        );
 
-       ob_start();
+        ob_start();
 
-       echo '<div class="recent-services">';
+        echo '<div class="recent-services">';
 
-       while ( $services->have_posts() ) {
-           $services->the_post();
+        while ( $services->have_posts() ) {
+            $services->the_post();
 
-           $service_id        = get_the_ID();
-           $base_price        = get_post_meta( $service_id, 'base_price', true );
-           $delivery_time_days = get_post_meta( $service_id, 'delivery_time_days', true );
+            $service_id = get_the_ID();
 
-           echo '<div class="service-item">';
+            $base_price = get_post_meta(
+                $service_id,
+                'base_price',
+                true
+            );
 
-            echo '<h4>';
-             echo '<a href="' . esc_url( get_permalink() ) . '">';
-             echo esc_html( get_the_title() );
-             echo '</a>';
-            echo '</h4>';
+            $delivery_days = get_post_meta(
+                $service_id,
+                'delivery_time_days',
+                true
+            );
 
-            if ( $base_price !== '' ) {
-                echo '<strong>Base Price:</strong> ';
-                echo esc_html( number_format( (float) $base_price, 2 ) );
-                echo ' | ';
-            }
+            $base_price = is_numeric( $base_price )
+                ? max( 0, (float) $base_price )
+                : 0;
 
-            if ( $delivery_time_days !== '' ) {
-                echo '<strong>Delivery Time:</strong> ';
-                echo esc_html( $delivery_time_days );
-                echo ' days';
-            }
+            $delivery_days = absint( $delivery_days );
+
+            echo '<article class="service-item">';
+
+            echo '<h3>';
+            echo '<a href="' . esc_url( get_permalink() ) . '">';
+            echo esc_html( get_the_title() );
+            echo '</a>';
+            echo '</h3>';
 
             echo '<div class="service-description">';
-             echo wp_kses_post( get_the_excerpt() );
+            echo wp_kses_post( get_the_excerpt() );
             echo '</div>';
 
-           echo '</div>';
-       }
+            echo '<div class="service-calculator" data-base-price="'
+                . esc_attr( $base_price ) . '">';
 
-       echo '</div>';
+            echo '<p><strong>Base Price:</strong> ';
+            echo esc_html(
+                '$' . number_format( $base_price, 2 )
+            );
+            echo '</p>';
 
-       wp_reset_postdata();
+            if ( $delivery_days > 0 ) {
+                echo '<p><strong>Delivery Time:</strong> ';
+                echo esc_html( $delivery_days );
+                echo ' days</p>';
+            }
 
-       return ob_get_clean();
-   }
+            echo '<fieldset class="service-addons">';
+            echo '<legend><strong>Optional Add-ons</strong></legend>';
+
+            foreach ( $addons as $key => $addon ) {
+                $input_id = 'service-' . $service_id . '-' . $key;
+
+                echo '<div class="service-addon">';
+
+                echo '<label for="' . esc_attr( $input_id ) . '">';
+
+                echo '<input type="checkbox"'
+                    . ' id="' . esc_attr( $input_id ) . '"'
+                    . ' class="service-addon-toggle"'
+                    . ' data-addon-price="' . esc_attr( $addon['price'] ) . '"> ';
+
+                echo esc_html( $addon['label'] );
+                echo ' (+' . esc_html(
+                    '$' . number_format( $addon['price'], 2 )
+                ) . ')';
+
+                echo '</label>';
+                echo '</div>';
+            }
+
+            echo '</fieldset>';
+
+            echo '<p class="service-estimate">';
+            echo '<strong>Estimated Price: </strong>';
+            echo '<span class="service-estimated-price" aria-live="polite">';
+            echo esc_html( '$' . number_format( $base_price, 2 ) );
+            echo '</span>';
+            echo '</p>';
+
+            echo '</div>'; // .service-calculator
+            echo '</article>';
+        }
+
+        echo '</div>';
+
+        wp_reset_postdata();
+
+        return ob_get_clean();
+    }
    
    function services_content_append( $content ){
        //return 'Test';
